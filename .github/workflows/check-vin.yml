@@ -1,0 +1,38 @@
+name: Check VIN and Notify
+
+on:
+  schedule:
+    # 每3小时运行一次（UTC），如需调整请修改cron表达式
+    - cron: '0 */3 * * *'
+  workflow_dispatch:
+    # 允许手动触发
+
+jobs:
+  check-vin:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run VIN check script
+        env:
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          MAIL_FROM: ${{ secrets.MAIL_FROM }}
+          MAIL_TO: ${{ secrets.MAIL_TO }}
+          ORDER_URL: ${{ secrets.ORDER_URL }}
+          ORDER_TOKEN: ${{ secrets.ORDER_TOKEN }}
+          ORDER_BRAND_CODE: ${{ secrets.ORDER_BRAND_CODE }}
+          ORDER_API_KEY: ${{ secrets.ORDER_API_KEY }}
+          ORDER_HEADERS_JSON: ${{ secrets.ORDER_HEADERS_JSON }}
+        run: npm run check:vin
