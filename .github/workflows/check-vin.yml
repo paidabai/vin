@@ -2,8 +2,8 @@ name: Check VIN and Notify
 
 on:
   schedule:
-    # 每3小时运行一次（UTC），如需调整请修改cron表达式
-    - cron: '0 */3 * * *'
+    # 每1小时运行一次（UTC），如需调整请修改 cron 表达式
+    - cron: '0 * * * *'
   workflow_dispatch:
     # 允许手动触发
 

@@ -1,13 +1,15 @@
 /*
  * 功能说明：
- * 该脚本由 GitHub Actions 每3小时自动运行一次，用于请求订单接口并根据返回数据发送邮件通知。
+ * 该脚本由 GitHub Actions 每小时自动运行一次，用于请求订单接口并根据返回数据发送邮件通知。
  * 通知规则：
  * 1) 当存在 VIN（车架号）时，立即向目标邮箱发送“VIN已生成”通知；
- * 2) 当不存在 VIN 时，每累计2次运行（基于 GitHub run number 取模）发送一次订单摘要到邮箱。
+ * 2) 当不存在 VIN 时，每累计3次运行发送一次订单摘要到邮箱（基于运行次数或北京时间小时取模）。
  * 环境变量（通过 GitHub Secrets 提供）：
  * - ORDER_URL：订单数据接口地址（必填）
  * - ORDER_TOKEN：接口鉴权 token（可选）
  * - ORDER_BRAND_CODE：品牌码 header（可选）
+ * - ORDER_API_KEY：接口 apikey（可选）
+ * - ORDER_HEADERS_JSON：JSON 字符串的自定义请求头（可选）
  * - SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS：SMTP 服务配置（必填以发送邮件）
  * - MAIL_FROM：发件邮箱地址（必填以发送邮件）
  * - MAIL_TO：收件邮箱地址（默认为 1196270151@qq.com）
@@ -146,12 +148,44 @@ async function sendEmail(subject, text, html) {
 }
 
 /**
+ * 计算是否需要发送“无 VIN 摘要”邮件（三次运行一个周期）
+ * 规则说明：
+ * - 若存在 GitHub 运行序号（GITHUB_RUN_NUMBER），则使用 run number 对 3 取模为 0 时发送；
+ * - 若不存在（本地运行），则使用北京时间的小时（0-23）对 3 取模为 0 时发送；
+ * 这样可以在不持久化状态的前提下，达到“每请求3次后发送一次”的效果。
+ * @returns {boolean} 是否应发送摘要邮件
+ */
+function shouldSendSummaryByCycle() {
+  const runStr = process.env.GITHUB_RUN_NUMBER
+  const runNum = runStr ? Number(runStr) : NaN
+  if (!Number.isNaN(runNum) && runNum > 0) {
+    return runNum % 3 === 0
+  }
+  const hour = getBeijingHour()
+  return hour % 3 === 0
+}
+
+/**
+ * 获取北京时间的整点小时（0-23）
+ * @returns {number} 北京时间的小时数
+ */
+function getBeijingHour() {
+  const now = new Date()
+  const fmt = new Intl.DateTimeFormat('zh-CN', {
+    hour: '2-digit',
+    hour12: false,
+    timeZone: 'Asia/Shanghai',
+  })
+  const hourStr = fmt.format(now)
+  return Number(hourStr)
+}
+
+/**
  * 主流程：请求订单数据并根据 VIN 规则发送通知
- * 规则：有 VIN 则立即发 VIN 通知；无 VIN 时每2次运行发一次摘要
+ * 规则：有 VIN 则立即发 VIN 通知；无 VIN 时每3次运行发一次摘要
  * @returns {Promise<void>} 无返回值
  */
 async function main() {
-  const runNumber = Number(process.env.GITHUB_RUN_NUMBER || 0) || 0
   const payload = await fetchOrderJson()
   const data = payload?.data || payload
 
@@ -165,13 +199,13 @@ async function main() {
     return
   }
 
-  // 无 VIN：仅在每2次运行时发送一次摘要（基于 run number 取模）
-  if (runNumber % 2 === 0) {
+  // 无 VIN：仅在每3次运行时发送一次摘要（基于运行次数或北京时间小时取模）
+  if (shouldSendSummaryByCycle()) {
     const subject = '订单进度提醒：暂未生成VIN'
     await sendEmail(subject, summaryText)
-    console.log('[提醒] 已发送周期性订单摘要邮件。')
+    console.log('[提醒] 已发送周期性订单摘要邮件（每第3次）。')
   } else {
-    console.log('[提醒] 暂未生成VIN，本次不发送邮件')
+    console.log('[提醒] 暂未生成VIN，本次不发送邮件（等待第3次）')
   }
 }
 
